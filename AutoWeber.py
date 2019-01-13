@@ -1,13 +1,14 @@
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, element
 from urllib.request import urlopen
-import argparse
 import re
+import string, random
 
 class AutoWeber():
     def __init__(self):
         self._html = None
         self._data = []
         self._htmlText = None
+        self._url = None
         # Django's RE for determining a website
         self.urlRE = re.compile(
             r'^(?:http|ftp)s?://' # http:// or https://
@@ -30,8 +31,14 @@ class AutoWeber():
 
         # Load BeautifulSoup object for the webpage
         self._htmlText = res.read()
+        self._url = url
         self._html = BeautifulSoup(self._htmlText, 'html.parser')
         self._data = []
+
+    def loadDataFromFile(self, filename):
+        lines = open(filename).read().split('\n')
+        for line in lines:
+            self.addData(line)
 
     # Adds data for analysis
     def addData(self, data):
@@ -56,8 +63,29 @@ class AutoWeber():
                 results.append(self._html.find_all(nameTag, string=entity)[0])
         return results 
 
-    # 
-    def deriveCommonStructure(self):
+    def _walkTheTree(self, tag):
+        struct = {}
+        #print("{}, type={}".format(tag, type(tag)))
+        children = [child for child in list(tag.children) if child != '\n' and type(child) != element.NavigableString]
+        struct["name"] = tag.name
+        if len(tag.attrs) > 0:
+            struct["attrs"] = tag.attrs
+        if len(children) > 0:
+            struct["children"] = []
+        for child in children:
+            childStruct = self._walkTheTree(child)
+            if struct["children"].count(childStruct) == 1:
+                continue
+            struct["children"].append(childStruct)
+        return struct
+        
+    def _id_generator(self, size=6, chars=string.ascii_uppercase + string.ascii_lowercase + string.digits):
+        res = random.choice(string.ascii_uppercase + string.ascii_lowercase)
+        print(res)
+        return res + ''.join(random.choice(chars) for _ in range(size-1))
+
+    # Derive a common structure
+    def _deriveCommonStructure(self):
         tags = self._getImmediateTags()
         tagHeir = {}
         print(tags)
@@ -65,6 +93,7 @@ class AutoWeber():
             tagHeir[tag] = list(tag.parents)
         layers = set()
         i = 0
+        # Deduct the data into a common denominator.
         while len(layers) != 1:
             layers = set()
             for key, val in tagHeir.items():
@@ -73,20 +102,6 @@ class AutoWeber():
                 print("Unioned layer: {}".format(layers))
             print("Current set: {}".format(layers))
             i += 1
-        print("Final structure: {}".format(layers))
-
-ap = argparse.ArgumentParser()
-ap.add_argument('-s', '--source', type=str, 
-    help="The source that will be retrieved.")
-ap.add_argument('-d', '--data', type=str,
-    help="The file source that contains what we're looking for.")
-args = vars(ap.parse_args())
-
-url = args['source']
-
-weber = AutoWeber()
-weber.loadHtml(url)
-weber.addData('Test1')
-weber.addData('Test2')
-
-weber.deriveCommonStructure()
+        structure = self._walkTheTree(layers.pop())
+        print("Final structure: {}".format(structure))
+        return structure
