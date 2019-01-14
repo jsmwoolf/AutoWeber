@@ -1,7 +1,16 @@
 from bs4 import BeautifulSoup, element
 from urllib.request import urlopen
 import re
-import string, random
+import string, random, json
+
+# Django's RE for determining a website
+urlRE = re.compile(
+    r'^(?:http|ftp)s?://' # http:// or https://
+    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
+    r'localhost|' #localhost...
+    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
+    r'(?::\d+)?' # optional port
+    r'(?:/?|[/?]\S+)$', re.IGNORECASE)
 
 class AutoWeber():
     def __init__(self):
@@ -16,18 +25,15 @@ class AutoWeber():
                 'class'
             ],
         }
-        # Django's RE for determining a website
-        self.urlRE = re.compile(
-            r'^(?:http|ftp)s?://' # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
-            r'localhost|' #localhost...
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
-            r'(?::\d+)?' # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+
+    def setOption(self, option, value):
+        if option in self._options:
+            if type(self._options[option]) == type(value):
+                self._options[option] = value
 
     # Determine whether the url is a website.
     def _isWebsite(self, url):
-        return self.urlRE.search(url) is not None
+        return urlRE.search(url) is not None
     
     def loadHtml(self, url):
         res = ''
@@ -79,10 +85,10 @@ class AutoWeber():
         #print("{}, type={}".format(tag, type(tag)))
         children = [child for child in list(tag.children) if child != '\n' and type(child) != element.NavigableString]
         struct["name"] = tag.name
-        if len(tag.attrs) > 0:
+        if len(tag.attrs) > 0 and len(self._options['retrieve-attrs']) > 0:
             struct["attrs"] = {}
             for key, val in tag.attrs.items():
-                print(key)
+                #print(key)
                 if self._isRetrievableAttr(key):
                     struct["attrs"][key] = val
         if len(children) > 0:
@@ -96,14 +102,14 @@ class AutoWeber():
         
     def _id_generator(self, size=6, chars=string.ascii_uppercase + string.ascii_lowercase + string.digits):
         res = random.choice(string.ascii_uppercase + string.ascii_lowercase)
-        print(res)
+        #print(res)
         return res + ''.join(random.choice(chars) for _ in range(size-1))
 
     # Derive a common structure
     def _deriveCommonStructure(self):
         tags = self._getImmediateTags()
         tagHeir = {}
-        print(tags)
+        #print(tags)
         for tag in tags:
             tagHeir[tag] = list(tag.parents)
         layers = set()
@@ -114,9 +120,20 @@ class AutoWeber():
             for key, val in tagHeir.items():
                 newStr = BeautifulSoup(str(val[i]),'html.parser')
                 layers = layers.union(set(newStr))
-                print("Unioned layer: {}".format(layers))
-            print("Current set: {}".format(layers))
+                #print("Unioned layer: {}".format(layers))
+            #print("Current set: {}".format(layers))
             i += 1
         structure = self._walkTheTree(layers.pop())
-        print("Final structure: {}".format(structure))
+        #print("Final structure: {}".format(structure))
         return structure
+
+    def writeStructureToJson(self, filename):
+        structure = self._deriveCommonStructure()
+        fileExt = filename.find('.')
+        if fileExt == -1:
+            filename += ".json"
+        elif filename[fileExt:] != '.json':
+            filename = filename[:fileExt]
+            filename += '.json'
+        with open(filename, 'w') as output:
+            json.dump(structure, output, indent = 4)
