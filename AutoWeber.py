@@ -9,6 +9,13 @@ class AutoWeber():
         self._data = []
         self._htmlText = None
         self._url = None
+        # The dictionary that dictates how the website should be parsed.
+        self._options = {
+            # Restricts the type of attributes that should be retrieved.
+            'retrieve-attrs':[
+                'class'
+            ],
+        }
         # Django's RE for determining a website
         self.urlRE = re.compile(
             r'^(?:http|ftp)s?://' # http:// or https://
@@ -25,13 +32,14 @@ class AutoWeber():
     def loadHtml(self, url):
         res = ''
         if self._isWebsite(url):
-            res = urlopen(url)
+            res = urlopen(url).read().decode('utf-8')
         else:
-            res = open(url)
+            res = open(url).read()
 
         # Load BeautifulSoup object for the webpage
-        self._htmlText = res.read()
+        self._htmlText = res
         self._url = url
+        #print(self._htmlText)
         self._html = BeautifulSoup(self._htmlText, 'html.parser')
         self._data = []
 
@@ -47,6 +55,9 @@ class AutoWeber():
     # Clear all data
     def clearData(self):
         self._data = []
+
+    def _isRetrievableAttr(self, attr):
+        return attr in self._options['retrieve-attrs']
 
     def _getTag(self, line):
         insideTag = re.compile(r"<([^/>]*)>")
@@ -69,7 +80,11 @@ class AutoWeber():
         children = [child for child in list(tag.children) if child != '\n' and type(child) != element.NavigableString]
         struct["name"] = tag.name
         if len(tag.attrs) > 0:
-            struct["attrs"] = tag.attrs
+            struct["attrs"] = {}
+            for key, val in tag.attrs.items():
+                print(key)
+                if self._isRetrievableAttr(key):
+                    struct["attrs"][key] = val
         if len(children) > 0:
             struct["children"] = []
         for child in children:

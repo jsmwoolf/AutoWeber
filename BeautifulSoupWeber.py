@@ -1,5 +1,6 @@
 from AutoWeber import AutoWeber
 import random
+import json
 
 class BeautifulSoupWeber(AutoWeber):
     def __init__(self):
@@ -23,6 +24,8 @@ class BeautifulSoupWeber(AutoWeber):
 
     def generateScrapingCode(self, filename):
         structure = self._deriveCommonStructure()
+        tmp = open('tmp.json', 'w')
+        json.dump(structure,tmp)
         self._file = open(filename, "w")
         self._writeToFile("from bs4 import BeautifulSoup, element")
         self._writeToFile("")
