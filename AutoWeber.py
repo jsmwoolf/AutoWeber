@@ -18,18 +18,6 @@ class AutoWeber():
         self._data = []
         self._htmlText = None
         self._url = None
-        # The dictionary that dictates how the website should be parsed.
-        self._options = {
-            # Restricts the type of attributes that should be retrieved.
-            'retrieve-attrs':[
-                'class'
-            ],
-        }
-
-    def setOption(self, option, value):
-        if option in self._options:
-            if type(self._options[option]) == type(value):
-                self._options[option] = value
 
     # Determine whether the url is a website.
     def _isWebsite(self, url):
@@ -62,9 +50,6 @@ class AutoWeber():
     def clearData(self):
         self._data = []
 
-    def _isRetrievableAttr(self, attr):
-        return attr in self._options['retrieve-attrs']
-
     def _getTag(self, line):
         insideTag = re.compile(r"<([^/>]*)>")
         return re.findall(insideTag, line)[0]
@@ -73,58 +58,70 @@ class AutoWeber():
         results = []
         for entity in self._data:
             # Find first instance
-            found = re.compile(r"<[^>]*>{}</[^>]*>".format(entity))
+            found = re.compile(r"<[^\/][^>]*>{}<\/[^>]*>".format(entity))
             tags = re.findall(found, self._htmlText)
             for tag in tags:
                 nameTag = self._getTag(tag).split()
                 results.append(self._html.find_all(nameTag, string=entity)[0])
         return results 
 
-    def _walkTheTree(self, tag):
-        struct = {}
-        #print("{}, type={}".format(tag, type(tag)))
-        children = [child for child in list(tag.children) if child != '\n' and type(child) != element.NavigableString]
-        struct["name"] = tag.name
-        if len(tag.attrs) > 0 and len(self._options['retrieve-attrs']) > 0:
-            struct["attrs"] = {}
-            for key, val in tag.attrs.items():
-                #print(key)
-                if self._isRetrievableAttr(key):
-                    struct["attrs"][key] = val
-        if len(children) > 0:
-            struct["children"] = []
-        for child in children:
-            childStruct = self._walkTheTree(child)
-            if struct["children"].count(childStruct) == 1:
-                continue
-            struct["children"].append(childStruct)
-        return struct
-        
-    def _id_generator(self, size=6, chars=string.ascii_uppercase + string.ascii_lowercase + string.digits):
-        res = random.choice(string.ascii_uppercase + string.ascii_lowercase)
-        #print(res)
-        return res + ''.join(random.choice(chars) for _ in range(size-1))
+    def _generateHTMLOrderString(self, html):
+        if type(html) == element.NavigableString:
+            return ""
+        result = html.name
+        filteredChildren = [child for child in html.children if child != '\n']
+        for child in filteredChildren:
+            result += self._generateHTMLOrderString(child)
+        return result
 
+    def _generateStructure(self, html):
+        struct = {'name': html[0].name}
+        # Grab attributes
+        if len(html[0].attrs) > 0:
+            struct['attrs'] = {}
+            if 'class' in html[0].attrs:
+                #print(key)
+                elements = {val for val in html[0].attrs['class']}
+                for i in range(1, len(html)):
+                    elements = elements.intersection({val for val in html[i].attrs['class']})
+                struct['attrs']['class'] = list(elements)
+        # Deal with children instances
+        if len(list(html[0].children)) > 0:
+            # Preparing child instances for looping and filtering
+            children = [[child for child in html[i].children if child != '\n' and type(child) != element.NavigableString] for i in range(len(html))]
+            children = [nonEmpty for nonEmpty in children if nonEmpty != []]
+            # Check whether we still have children
+            if len(children) > 0:
+                struct["children"] = []
+                for i in range(len(children[0])):
+                    newLayer = [children[j][i] for j in range(len(html))]
+                    struct["children"].append(self._generateStructure(newLayer))
+        # Return structure
+        return struct
+            
     # Derive a common structure
     def _deriveCommonStructure(self):
         tags = self._getImmediateTags()
+        if len(tags) == 0:
+            raise Exception("No tags derived from data.")
         tagHeir = {}
-        #print(tags)
         for tag in tags:
             tagHeir[tag] = list(tag.parents)
-        layers = set()
         i = 0
+        finalStructStr = None
+        structs = {}
         # Deduct the data into a common denominator.
-        while len(layers) != 1:
-            layers = set()
+        while finalStructStr == None:
             for key, val in tagHeir.items():
-                newStr = BeautifulSoup(str(val[i]),'html.parser')
-                layers = layers.union(set(newStr))
-                #print("Unioned layer: {}".format(layers))
-            #print("Current set: {}".format(layers))
+                orderStr = self._generateHTMLOrderString(val[i])
+                if orderStr not in structs:
+                    structs[orderStr] = []
+                structs[orderStr].append(val[i])
+                if len(structs[orderStr]) == len(tagHeir):
+                    finalStructStr = orderStr
+                    break
             i += 1
-        structure = self._walkTheTree(layers.pop())
-        #print("Final structure: {}".format(structure))
+        structure = self._generateStructure(structs[finalStructStr])
         return structure
 
     def writeStructureToJson(self, filename):
