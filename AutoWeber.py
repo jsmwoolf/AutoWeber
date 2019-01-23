@@ -113,6 +113,10 @@ class AutoWeber():
         # Deduct the data into a common denominator.
         while finalStructStr == None:
             for key, val in tagHeir.items():
+                # If the current parent level is greater than the amount of parents
+                # found for the tag, move on to the next tag.
+                if i >= len(val):
+                    continue
                 orderStr = self._generateHTMLOrderString(val[i])
                 if orderStr not in structs:
                     structs[orderStr] = []
